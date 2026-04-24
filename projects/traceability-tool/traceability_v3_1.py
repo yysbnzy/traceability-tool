@@ -491,7 +491,10 @@ A: 该用例未关联任何需求（需求ID列为空）
         req_id_idx = self.col_to_index(self.req_id_col.get())
 
         try:
-            self.analyze(case_id_idx, case_req_idx, req_id_idx)
+            result = self.analyze(case_id_idx, case_req_idx, req_id_idx)
+            if result is None:
+                # 用户取消了保存对话框，不显示完成提示
+                return
             messagebox.showinfo("完成", "✅ 溯源分析已完成！")
         except Exception as e:
             messagebox.showerror("错误", f"分析失败: {str(e)}")
@@ -575,8 +578,12 @@ A: 该用例未关联任何需求（需求ID列为空）
         missing_case_reqs = all_req_ids_raw - set(req_to_cases.keys())
 
         # ===== 应用过滤配置（仅影响双向溯源表显示，不影响异常分析） =====
+        # 清理过滤条件（去除首尾空格和不可见字符）
         case_filter = self.case_filter_prefix.get().strip()
         req_filter = self.req_filter_prefix.get().strip()
+        # 额外清理：去除零宽字符、换行符等
+        case_filter = case_filter.replace('\n', '').replace('\r', '').replace('\t', '').replace('\u200b', '')
+        req_filter = req_filter.replace('\n', '').replace('\r', '').replace('\t', '').replace('\u200b', '')
 
         # 保存过滤前的完整数据用于异常分析
         case_to_reqs_raw_full = dict(case_to_reqs_raw)
@@ -637,7 +644,7 @@ A: 该用例未关联任何需求（需求ID列为空）
             filetypes=[("Excel文件", "*.xlsx")]
         )
         if not output_path:
-            return
+            return None  # 用户取消
 
         # 提前计算孤儿用例和需求，避免后面重复计算
         orphan_cases = [c for c, r in case_to_reqs_raw_full.items() if not r] if case_to_reqs_raw_full else [c for c, r in case_to_reqs_raw.items() if not r]
@@ -670,52 +677,120 @@ A: 该用例未关联任何需求（需求ID列为空）
 
         self.export(output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                    all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full, filtered_out_cases,
-                   validation_errors, total_input_unique, traceability_entries, anomaly_entries, filtered_out_cases_original)
+                   validation_errors, total_input_unique, traceability_entries, anomaly_entries, filtered_out_cases_original,
+                   unique_case_ids, unique_orphan_req_ids)
+        
+        return output_path
 
     def export(self, output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None, filtered_out_cases=None,
-               validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0, filtered_out_cases_original=None):
+               validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0, filtered_out_cases_original=None,
+               unique_case_ids=None, unique_orphan_req_ids=None):
         wb = Workbook()
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=11)
         thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
                             top=Side(style='thin'), bottom=Side(style='thin'))
 
-        # 双向溯源表
+        # === Sheet1: 双向溯源表-合并版 (A/B + D/E) ===
         ws1 = wb.active
-        ws1.title = "双向溯源表"
+        ws1.title = "双向溯源表-合并版"
+        center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+        sorted_cases = sorted([c for c, r in case_to_reqs.items() if r])
+        sorted_reqs = sorted([r for r, c in req_to_cases.items() if c])
+
+        # A/B列：用例→需求（合并单元格版）
         ws1['A1'] = '用例ID'
         ws1['B1'] = '关联需求ID'
         for cell in [ws1['A1'], ws1['B1']]:
             cell.font = header_font
             cell.fill = header_fill
             cell.border = thin_border
+            cell.alignment = center_align
 
-        sorted_cases = sorted([c for c, r in case_to_reqs.items() if r])
-        for idx, case_id in enumerate(sorted_cases, start=2):
+        current_row = 2
+        for case_id in sorted_cases:
             reqs = sorted(case_to_reqs[case_id])
-            ws1.cell(row=idx, column=1, value=case_id)
-            ws1.cell(row=idx, column=2, value=", ".join(reqs))
-            ws1.cell(row=idx, column=1).border = thin_border
-            ws1.cell(row=idx, column=2).border = thin_border
+            start_row = current_row
+            for req_id in reqs:
+                ws1.cell(row=current_row, column=2, value=req_id)
+                ws1.cell(row=current_row, column=2).border = thin_border
+                ws1.cell(row=current_row, column=2).alignment = left_align
+                current_row += 1
+            if len(reqs) > 1:
+                ws1.merge_cells(start_row=start_row, start_column=1, end_row=current_row-1, end_column=1)
+            ws1.cell(row=start_row, column=1, value=case_id)
+            ws1.cell(row=start_row, column=1).border = thin_border
+            ws1.cell(row=start_row, column=1).alignment = center_align
 
+        # D/E列：需求→用例（合并单元格版）
         ws1['D1'] = '需求ID'
         ws1['E1'] = '关联用例ID'
         for cell in [ws1['D1'], ws1['E1']]:
             cell.font = header_font
             cell.fill = header_fill
             cell.border = thin_border
+            cell.alignment = center_align
 
-        sorted_reqs = sorted([r for r, c in req_to_cases.items() if c])
-        for idx, req_id in enumerate(sorted_reqs, start=2):
+        current_row = 2
+        for req_id in sorted_reqs:
             cases = sorted(req_to_cases[req_id])
-            ws1.cell(row=idx, column=4, value=req_id)
-            ws1.cell(row=idx, column=5, value=", ".join(cases))
-            ws1.cell(row=idx, column=4).border = thin_border
-            ws1.cell(row=idx, column=5).border = thin_border
+            start_row = current_row
+            for case_id in cases:
+                ws1.cell(row=current_row, column=5, value=case_id)
+                ws1.cell(row=current_row, column=5).border = thin_border
+                ws1.cell(row=current_row, column=5).alignment = left_align
+                current_row += 1
+            if len(cases) > 1:
+                ws1.merge_cells(start_row=start_row, start_column=4, end_row=current_row-1, end_column=4)
+            ws1.cell(row=start_row, column=4, value=req_id)
+            ws1.cell(row=start_row, column=4).border = thin_border
+            ws1.cell(row=start_row, column=4).alignment = center_align
 
         for col in ['A', 'B', 'D', 'E']:
             ws1.column_dimensions[col].width = 40
+
+        # === Sheet2: 双向溯源表-逗号版 (A/B + D/E) ===
+        ws_comma = wb.create_sheet("双向溯源表-逗号版")
+
+        # A/B列：用例→需求（逗号分隔版）
+        ws_comma['A1'] = '用例ID'
+        ws_comma['B1'] = '关联需求ID'
+        for cell in [ws_comma['A1'], ws_comma['B1']]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+            cell.alignment = center_align
+
+        for idx, case_id in enumerate(sorted_cases, start=2):
+            reqs = sorted(case_to_reqs[case_id])
+            ws_comma.cell(row=idx, column=1, value=case_id)
+            ws_comma.cell(row=idx, column=2, value=", ".join(reqs))
+            for c in [1, 2]:
+                ws_comma.cell(row=idx, column=c).border = thin_border
+                ws_comma.cell(row=idx, column=c).alignment = left_align
+
+        # D/E列：需求→用例（逗号分隔版）
+        ws_comma['D1'] = '需求ID'
+        ws_comma['E1'] = '关联用例ID'
+        for cell in [ws_comma['D1'], ws_comma['E1']]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.border = thin_border
+            cell.alignment = center_align
+
+        for idx, req_id in enumerate(sorted_reqs, start=2):
+            cases = sorted(req_to_cases[req_id])
+            ws_comma.cell(row=idx, column=4, value=req_id)
+            ws_comma.cell(row=idx, column=5, value=", ".join(cases))
+            for c in [4, 5]:
+                ws_comma.cell(row=idx, column=c).border = thin_border
+                ws_comma.cell(row=idx, column=c).alignment = left_align
+
+        for col in ['A', 'B', 'D', 'E']:
+            ws_comma.column_dimensions[col].width = 40
 
         # 输入源
         ws2 = wb.create_sheet("输入源")
@@ -852,9 +927,12 @@ A: 该用例未关联任何需求（需求ID列为空）
         coverage = (linked_reqs / len(all_req_ids_raw) * 100) if all_req_ids_raw else 0
 
         stats = [
-            ('输入源去重总数', total_valid_rows, '用例文档中所有不重复用例ID + 不重复孤儿需求ID总数'),
+            ('输入源去重用例数', len(unique_case_ids) if unique_case_ids else 0, '用例文档中不重复的用例ID总数'),
+            ('输入源去重需求数', len(unique_orphan_req_ids) if unique_orphan_req_ids else 0, '用例文档中不重复的需求ID总数（含孤儿需求）'),
+            ('输入源去重总数', total_valid_rows, '用例文档中不重复用例ID + 不重复孤儿需求ID总数'),
             ('', '', ''),
             ('双向溯源表去重用例数', traceability_entries, '过滤后双向溯源表中的用例数量（去重）'),
+            ('双向溯源表去重需求数', len([r for r, c in req_to_cases.items() if c]), '过滤后双向溯源表中的需求数量（去重）'),
             ('异常分析表条目数', anomaly_entries, '异常分析表中所有异常条目总数'),
             ('输出数据总计', traceability_entries + anomaly_entries, '双向溯源表 + 异常分析表'),
             ('', '', ''),
