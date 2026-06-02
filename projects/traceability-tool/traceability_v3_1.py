@@ -243,7 +243,7 @@ class TraceabilityTool:
             return ""
         elif source == "需求文档列":
             if not self.req_wb:
-                return None
+                return ""  # 返回空字符串而不是None，避免拼接时出现"None"
             col_idx = self.col_to_index(widget.get())
             if req_row and len(req_row) > col_idx:
                 val = req_row[col_idx]
@@ -514,12 +514,18 @@ A: 该用例未关联任何需求（需求ID列为空）
         case_ws = self.case_wb[self.case_sheet.get()] if self.case_sheet.get() and self.case_sheet.get() != "默认" else self.case_wb.active
         max_col = max(case_id_idx, case_req_idx) + 1
 
-        # 预加载需求文档数据
+        # 预加载需求文档数据 - 用需求ID做索引，避免行号错位
         req_data_cache = {}
         if self.req_wb:
             req_ws = self.req_wb[self.req_sheet.get()] if self.req_sheet.get() and self.req_sheet.get() != "默认" else self.req_wb.active
             for idx, row in enumerate(req_ws.iter_rows(min_row=2, values_only=True), start=2):
-                req_data_cache[idx] = row
+                # 用需求ID作为key，而不是行号
+                if len(row) > req_id_idx:
+                    req_id_val = str(row[req_id_idx]).strip() if row[req_id_idx] else ''
+                    if req_id_val and req_id_val != 'None':
+                        req_data_cache[req_id_val] = row
+                # 同时保留行号索引作为fallback
+                req_data_cache[f"__row_{idx}"] = row
 
         for idx, row in enumerate(case_ws.iter_rows(min_row=2, max_col=max_col, values_only=True), start=2):
             if len(row) <= max(case_id_idx, case_req_idx):
@@ -532,7 +538,12 @@ A: 该用例未关联任何需求（需求ID列为空）
             if (not case_id_raw or case_id_raw == 'None') and not req_ids:
                 continue  # 既无用例ID也无需求ID，跳过
 
-            req_row_data = req_data_cache.get(idx)
+            # 优先按需求ID查找，找不到则按行号fallback
+            req_row_data = None
+            if req_ids and self.req_wb:
+                req_row_data = req_data_cache.get(req_ids[0])  # 用第一个需求ID查找
+            if req_row_data is None:
+                req_row_data = req_data_cache.get(f"__row_{idx}")
 
             # 动态获取前缀后缀
             case_prefix = self.get_concat_value("case", "prefix", row, req_row_data)
@@ -564,10 +575,10 @@ A: 该用例未关联任何需求（需求ID列为空）
                     case_to_reqs_raw[case_id_raw].add(req_id_full)
                     case_to_original_reqs[case_id_full].add(req_id)  # 保存原始需求ID（不拼接前缀后缀）
 
-        # 需求文档所有需求
+        # 需求文档所有需求（使用用户选择的Sheet，而不是默认active）
         all_req_ids_raw = set()
         if self.req_wb:
-            req_ws = self.req_wb.active
+            req_ws = self.req_wb[self.req_sheet.get()] if self.req_sheet.get() and self.req_sheet.get() != "默认" else self.req_wb.active
             for row in req_ws.iter_rows(min_row=2, max_col=req_id_idx+1, values_only=True):
                 if len(row) <= req_id_idx:
                     continue
@@ -575,7 +586,26 @@ A: 该用例未关联任何需求（需求ID列为空）
                 if req_id and req_id != 'None':
                     all_req_ids_raw.add(req_id)
 
-        missing_case_reqs = all_req_ids_raw - set(req_to_cases.keys())
+        # 计算缺失用例的需求：需要考虑需求ID拼接的情况
+        # req_to_cases.keys() 是拼接后的需求ID，all_req_ids_raw 是原始ID
+        # 只处理固定文本来源的前缀/后缀，动态列来源无法统一提取
+        req_prefix_fixed = ""
+        req_suffix_fixed = ""
+        if self.concat_widgets["req_prefix_source"].get() == "固定文本":
+            req_prefix_fixed = self.concat_widgets["req_prefix_value"].get().strip()
+        if self.concat_widgets["req_suffix_source"].get() == "固定文本":
+            req_suffix_fixed = self.concat_widgets["req_suffix_value"].get().strip()
+        
+        req_to_cases_raw_ids = set()
+        for req_id_full in req_to_cases.keys():
+            req_id_raw = req_id_full
+            if req_prefix_fixed and req_id_full.startswith(req_prefix_fixed):
+                req_id_raw = req_id_full[len(req_prefix_fixed):]
+            if req_suffix_fixed and req_id_raw.endswith(req_suffix_fixed):
+                req_id_raw = req_id_raw[:-len(req_suffix_fixed)]
+            req_to_cases_raw_ids.add(req_id_raw)
+        
+        missing_case_reqs = all_req_ids_raw - req_to_cases_raw_ids
 
         # ===== 应用过滤配置（仅影响双向溯源表显示，不影响异常分析） =====
         # 清理过滤条件（去除首尾空格和不可见字符）
