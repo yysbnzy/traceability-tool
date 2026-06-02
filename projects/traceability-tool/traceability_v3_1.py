@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 测试用例与需求溯源工具 v3.1 - 优化UI布局
-fix6: 提前询问保存路径 + 修复逗号版拼接显示
 """
 
 import re
@@ -532,15 +531,6 @@ A: 该用例未关联任何需求（需求ID列为空）
                 # 同时保留行号索引作为fallback
                 req_data_cache[f"__row_{idx}"] = row
 
-        # 提前询问保存路径，避免用户取消后计算白费
-        output_path = filedialog.asksaveasfilename(
-            title="保存分析结果",
-            defaultextension=".xlsx",
-            filetypes=[("Excel文件", "*.xlsx")]
-        )
-        if not output_path:
-            return None  # 用户取消
-
         for idx, row in enumerate(case_ws.iter_rows(min_row=2, max_col=max_col, values_only=True), start=2):
             if len(row) <= max(case_id_idx, case_req_idx):
                 continue
@@ -665,6 +655,18 @@ A: 该用例未关联任何需求（需求ID列为空）
                     case_to_reqs_raw[case_id] = filtered_reqs
                 else:
                     del case_to_reqs_raw[case_id]
+
+        output_path = filedialog.asksaveasfilename(
+            title="保存分析结果",
+            defaultextension=".xlsx",
+            filetypes=[("Excel文件", "*.xlsx")]
+        )
+        if not output_path:
+            return None  # 用户取消
+
+        # 提前计算孤儿用例和需求，避免后面重复计算
+        orphan_cases = [c for c, r in case_to_reqs_raw_full.items() if not r] if case_to_reqs_raw_full else [c for c, r in case_to_reqs_raw.items() if not r]
+        orphan_reqs = [r for r, c in req_to_cases_full.items() if not c] if req_to_cases_full else [r for r, c in req_to_cases.items() if not c]
 
         # 计算去重后的输入源总数
         total_input_unique = len(unique_case_ids) + len(unique_orphan_req_ids)
@@ -808,6 +810,7 @@ A: 该用例未关联任何需求（需求ID列为空）
 
         for idx, req_id in enumerate(sorted_reqs, start=2):
             cases = sorted(req_to_cases[req_id])
+            # 双向溯源表输出时使用拼接后的ID
             display_req_id = concat_req_map.get(req_id, req_id) if concat_req_map else req_id
             display_cases = [concat_case_map.get(c, c) for c in cases] if concat_case_map else cases
             ws_comma.cell(row=idx, column=4, value=display_req_id)
@@ -831,15 +834,6 @@ A: 该用例未关联任何需求（需求ID列为空）
         case_ws = self.case_wb[self.case_sheet.get()] if self.case_sheet.get() and self.case_sheet.get() != "默认" else self.case_wb.active
         max_col = max(self.col_to_index(self.case_id_col.get()),
                      self.col_to_index(self.case_req_col.get())) + 1
-        # 提前询问保存路径，避免用户取消后计算白费
-        output_path = filedialog.asksaveasfilename(
-            title="保存分析结果",
-            defaultextension=".xlsx",
-            filetypes=[("Excel文件", "*.xlsx")]
-        )
-        if not output_path:
-            return None  # 用户取消
-
         for idx, row in enumerate(case_ws.iter_rows(min_row=2, max_col=max_col, values_only=True), start=2):
             case_col = self.col_to_index(self.case_id_col.get())
             req_col = self.col_to_index(self.case_req_col.get())
