@@ -502,14 +502,18 @@ A: 该用例未关联任何需求（需求ID列为空）
             traceback.print_exc()
 
     def analyze(self, case_id_idx, case_req_idx, req_id_idx):
-        case_to_reqs = {}
-        case_to_reqs_raw = {}
-        req_to_cases = {}
-        case_to_original_reqs = {}  # key=拼接用例ID, value=set(原始需求ID，不拼接前缀后缀)
+        case_to_reqs = {}  # key=原始用例ID, value=set(原始需求ID)
+        case_to_reqs_raw = {}  # key=原始用例ID, value=set(原始需求ID) — 与case_to_reqs保持一致
+        req_to_cases = {}  # key=原始需求ID, value=set(原始用例ID)
+        case_to_original_reqs = {}  # key=原始用例ID, value=set(原始需求ID)
+
+        # 拼接映射：用于输出双向溯源表时动态拼接显示
+        concat_case_map = {}  # 原始用例ID -> 拼接后显示用例ID
+        concat_req_map = {}   # 原始需求ID -> 拼接后显示需求ID
 
         # 去重统计输入源数据
-        unique_case_ids = set()      # 所有出现过的不重复用例ID（含前缀后缀）
-        unique_orphan_req_ids = set()  # 只有需求ID（无用例ID）的不重复需求ID（含前缀后缀）
+        unique_case_ids = set()      # 所有出现过的不重复原始用例ID
+        unique_orphan_req_ids = set()  # 只有需求ID（无用例ID）的不重复原始需求ID
 
         case_ws = self.case_wb[self.case_sheet.get()] if self.case_sheet.get() and self.case_sheet.get() != "默认" else self.case_wb.active
         max_col = max(case_id_idx, case_req_idx) + 1
@@ -552,28 +556,30 @@ A: 该用例未关联任何需求（需求ID列为空）
             case_id_full = None
             if case_id_raw and case_id_raw != 'None':
                 case_id_full = f"{case_prefix}{case_id_raw}{case_suffix}"
-                unique_case_ids.add(case_id_full)  # 去重统计用例ID
-                if case_id_full not in case_to_reqs:
-                    case_to_reqs[case_id_full] = set()
+                concat_case_map[case_id_raw] = case_id_full  # 记录拼接映射
+                unique_case_ids.add(case_id_raw)  # 去重统计原始用例ID
+                if case_id_raw not in case_to_reqs:
+                    case_to_reqs[case_id_raw] = set()
                     case_to_reqs_raw[case_id_raw] = set()
-                    case_to_original_reqs[case_id_full] = set()
+                    case_to_original_reqs[case_id_raw] = set()
 
             for req_id in req_ids:
                 req_prefix = self.get_concat_value("req", "prefix", row, req_row_data)
                 req_suffix = self.get_concat_value("req", "suffix", row, req_row_data)
                 req_id_full = f"{req_prefix}{req_id}{req_suffix}"
+                concat_req_map[req_id] = req_id_full  # 记录拼接映射
 
                 # 只有需求ID（无用例ID）的行，统计为孤儿需求候选
-                if not case_id_full:
-                    unique_orphan_req_ids.add(req_id_full)
+                if not case_id_raw:
+                    unique_orphan_req_ids.add(req_id)
 
-                if req_id_full not in req_to_cases:
-                    req_to_cases[req_id_full] = set()
-                if case_id_full:
-                    req_to_cases[req_id_full].add(case_id_full)
-                    case_to_reqs[case_id_full].add(req_id_full)
-                    case_to_reqs_raw[case_id_raw].add(req_id_full)
-                    case_to_original_reqs[case_id_full].add(req_id)  # 保存原始需求ID（不拼接前缀后缀）
+                if req_id not in req_to_cases:
+                    req_to_cases[req_id] = set()
+                if case_id_raw:
+                    req_to_cases[req_id].add(case_id_raw)
+                    case_to_reqs[case_id_raw].add(req_id)
+                    case_to_reqs_raw[case_id_raw].add(req_id)
+                    case_to_original_reqs[case_id_raw].add(req_id)
 
         # 需求文档所有需求（使用用户选择的Sheet，而不是默认active）
         all_req_ids_raw = set()
@@ -586,26 +592,8 @@ A: 该用例未关联任何需求（需求ID列为空）
                 if req_id and req_id != 'None':
                     all_req_ids_raw.add(req_id)
 
-        # 计算缺失用例的需求：需要考虑需求ID拼接的情况
-        # req_to_cases.keys() 是拼接后的需求ID，all_req_ids_raw 是原始ID
-        # 只处理固定文本来源的前缀/后缀，动态列来源无法统一提取
-        req_prefix_fixed = ""
-        req_suffix_fixed = ""
-        if self.concat_widgets["req_prefix_source"].get() == "固定文本":
-            req_prefix_fixed = self.concat_widgets["req_prefix_value"].get().strip()
-        if self.concat_widgets["req_suffix_source"].get() == "固定文本":
-            req_suffix_fixed = self.concat_widgets["req_suffix_value"].get().strip()
-        
-        req_to_cases_raw_ids = set()
-        for req_id_full in req_to_cases.keys():
-            req_id_raw = req_id_full
-            if req_prefix_fixed and req_id_full.startswith(req_prefix_fixed):
-                req_id_raw = req_id_full[len(req_prefix_fixed):]
-            if req_suffix_fixed and req_id_raw.endswith(req_suffix_fixed):
-                req_id_raw = req_id_raw[:-len(req_suffix_fixed)]
-            req_to_cases_raw_ids.add(req_id_raw)
-        
-        missing_case_reqs = all_req_ids_raw - req_to_cases_raw_ids
+        # 计算缺失用例的需求：req_to_cases.keys() 现在已是原始需求ID，直接比较
+        missing_case_reqs = all_req_ids_raw - set(req_to_cases.keys())
 
         # ===== 应用过滤配置（仅影响双向溯源表显示，不影响异常分析） =====
         # 清理过滤条件（去除首尾空格和不可见字符）
@@ -708,14 +696,14 @@ A: 该用例未关联任何需求（需求ID列为空）
         self.export(output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                    all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full, filtered_out_cases,
                    validation_errors, total_input_unique, traceability_entries, anomaly_entries, filtered_out_cases_original,
-                   unique_case_ids, unique_orphan_req_ids)
+                   unique_case_ids, unique_orphan_req_ids, concat_case_map, concat_req_map)
         
         return output_path
 
     def export(self, output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None, filtered_out_cases=None,
                validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0, filtered_out_cases_original=None,
-               unique_case_ids=None, unique_orphan_req_ids=None):
+               unique_case_ids=None, unique_orphan_req_ids=None, concat_case_map=None, concat_req_map=None):
         wb = Workbook()
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -743,15 +731,18 @@ A: 该用例未关联任何需求（需求ID列为空）
         current_row = 2
         for case_id in sorted_cases:
             reqs = sorted(case_to_reqs[case_id])
+            # 双向溯源表输出时使用拼接后的ID
+            display_case_id = concat_case_map.get(case_id, case_id) if concat_case_map else case_id
             start_row = current_row
             for req_id in reqs:
-                ws1.cell(row=current_row, column=2, value=req_id)
+                display_req_id = concat_req_map.get(req_id, req_id) if concat_req_map else req_id
+                ws1.cell(row=current_row, column=2, value=display_req_id)
                 ws1.cell(row=current_row, column=2).border = thin_border
                 ws1.cell(row=current_row, column=2).alignment = left_align
                 current_row += 1
             if len(reqs) > 1:
                 ws1.merge_cells(start_row=start_row, start_column=1, end_row=current_row-1, end_column=1)
-            ws1.cell(row=start_row, column=1, value=case_id)
+            ws1.cell(row=start_row, column=1, value=display_case_id)
             ws1.cell(row=start_row, column=1).border = thin_border
             ws1.cell(row=start_row, column=1).alignment = center_align
 
@@ -767,15 +758,18 @@ A: 该用例未关联任何需求（需求ID列为空）
         current_row = 2
         for req_id in sorted_reqs:
             cases = sorted(req_to_cases[req_id])
+            # 双向溯源表输出时使用拼接后的ID
+            display_req_id = concat_req_map.get(req_id, req_id) if concat_req_map else req_id
             start_row = current_row
             for case_id in cases:
-                ws1.cell(row=current_row, column=5, value=case_id)
+                display_case_id = concat_case_map.get(case_id, case_id) if concat_case_map else case_id
+                ws1.cell(row=current_row, column=5, value=display_case_id)
                 ws1.cell(row=current_row, column=5).border = thin_border
                 ws1.cell(row=current_row, column=5).alignment = left_align
                 current_row += 1
             if len(cases) > 1:
                 ws1.merge_cells(start_row=start_row, start_column=4, end_row=current_row-1, end_column=4)
-            ws1.cell(row=start_row, column=4, value=req_id)
+            ws1.cell(row=start_row, column=4, value=display_req_id)
             ws1.cell(row=start_row, column=4).border = thin_border
             ws1.cell(row=start_row, column=4).alignment = center_align
 
@@ -796,7 +790,10 @@ A: 该用例未关联任何需求（需求ID列为空）
 
         for idx, case_id in enumerate(sorted_cases, start=2):
             reqs = sorted(case_to_reqs[case_id])
-            ws_comma.cell(row=idx, column=1, value=case_id)
+            # 双向溯源表输出时使用拼接后的ID
+            display_case_id = concat_case_map.get(case_id, case_id) if concat_case_map else case_id
+            display_reqs = [concat_req_map.get(r, r) for r in reqs] if concat_req_map else reqs
+            ws_comma.cell(row=idx, column=1, value=display_case_id)
             ws_comma.cell(row=idx, column=2, value=", ".join(reqs))
             for c in [1, 2]:
                 ws_comma.cell(row=idx, column=c).border = thin_border
