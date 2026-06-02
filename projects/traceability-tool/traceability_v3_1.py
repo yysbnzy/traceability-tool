@@ -708,6 +708,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         self.export(output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                    all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full, filtered_out_cases,
                    validation_errors, total_input_unique, traceability_entries, anomaly_entries, filtered_out_cases_original,
+                   case_filtered_out, case_filtered_original, req_filtered_out, req_filtered_original,
                    unique_case_ids, unique_orphan_req_ids, concat_case_map, concat_req_map)
         
         return output_path
@@ -715,6 +716,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
     def export(self, output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None, filtered_out_cases=None,
                validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0, filtered_out_cases_original=None,
+               case_filtered_out=None, case_filtered_original=None, req_filtered_out=None, req_filtered_original=None,
                unique_case_ids=None, unique_orphan_req_ids=None, concat_case_map=None, concat_req_map=None):
         wb = Workbook()
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -788,6 +790,16 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         for col in ['A', 'B', 'D', 'E']:
             ws1.column_dimensions[col].width = 40
 
+        # 空5行 + 去重统计（放在双向溯源表后面）
+        ws1.cell(row=current_row + 5, column=1, value="去重统计")
+        ws1.cell(row=current_row + 5, column=1).font = Font(bold=True, size=12)
+        ws1.cell(row=current_row + 6, column=1, value="去重用例数")
+        ws1.cell(row=current_row + 6, column=2, value=len(sorted_cases))
+        ws1.cell(row=current_row + 7, column=1, value="去重需求数")
+        ws1.cell(row=current_row + 7, column=2, value=len(sorted_reqs))
+        ws1.cell(row=current_row + 8, column=1, value="总关联数")
+        ws1.cell(row=current_row + 8, column=2, value=traceability_entries)
+
         # === Sheet2: 双向溯源表-逗号版 (A/B + D/E) ===
         ws_comma = wb.create_sheet("双向溯源表-逗号版")
 
@@ -833,6 +845,17 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
 
         for col in ['A', 'B', 'D', 'E']:
             ws_comma.column_dimensions[col].width = 40
+
+        # 空5行 + 去重统计（放在逗号版后面）
+        last_row = len(sorted_cases) + len(sorted_reqs) + 7  # 大致位置
+        ws_comma.cell(row=last_row, column=1, value="去重统计")
+        ws_comma.cell(row=last_row, column=1).font = Font(bold=True, size=12)
+        ws_comma.cell(row=last_row + 1, column=1, value="去重用例数")
+        ws_comma.cell(row=last_row + 1, column=2, value=len(sorted_cases))
+        ws_comma.cell(row=last_row + 2, column=1, value="去重需求数")
+        ws_comma.cell(row=last_row + 2, column=2, value=len(sorted_reqs))
+        ws_comma.cell(row=last_row + 3, column=1, value="总关联数")
+        ws_comma.cell(row=last_row + 3, column=2, value=traceability_entries)
 
         # 输入源
         ws2 = wb.create_sheet("输入源")
@@ -890,7 +913,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         orphan_cases = [c for c, r in case_to_reqs_raw_full.items() if not r] if case_to_reqs_raw_full else [c for c, r in case_to_reqs_raw.items() if not r]
         orphan_reqs = [r for r, c in req_to_cases_full.items() if not c] if req_to_cases_full else [r for r, c in req_to_cases.items() if not c]
 
-        # 孤儿用例
+        # 1. 孤儿用例
         for case_id in orphan_cases:
             ws3.cell(row=row_idx, column=1, value="孤儿用例")
             ws3.cell(row=row_idx, column=2, value=case_id)
@@ -899,7 +922,19 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                 ws3.cell(row=row_idx, column=c).border = thin_border
             row_idx += 1
 
-        # 需求被过滤的用例（新增）
+        # 2. 用例被过滤（由case_filter导致，用例ID不符合过滤前缀）
+        if case_filtered_out:
+            for case_id, reqs in case_filtered_out.items():
+                if case_id not in orphan_cases:  # 避免重复
+                    display_reqs = case_filtered_original.get(case_id, reqs) if case_filtered_original else reqs
+                    ws3.cell(row=row_idx, column=1, value="用例被过滤")
+                    ws3.cell(row=row_idx, column=2, value=case_id)
+                    ws3.cell(row=row_idx, column=3, value=f"用例ID不符合过滤条件: {', '.join(display_reqs)}")
+                    for c in [1, 2, 3]:
+                        ws3.cell(row=row_idx, column=c).border = thin_border
+                    row_idx += 1
+
+        # 3. 需求被过滤（由req_filter导致，所有需求不符合过滤前缀）
         if filtered_out_cases:
             for case_id, reqs in filtered_out_cases.items():
                 if case_id not in orphan_cases:  # 避免重复
