@@ -687,14 +687,11 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         total_input_unique = len(unique_case_ids) + len(unique_orphan_req_ids)
 
         # ===== 数据完整性校验 =====
-        # 新校验逻辑：双向溯源表去重用例数 + 异常分析表条目数 = 去重后的输入源总数
+        # 简化校验：输入去重总数 = 输出去重总数（双向溯源表 + 异常分析表）
         traceability_entries = len([c for c, r in case_to_reqs.items() if r])  # 双向溯源表去重用例数
 
-        # 异常分析表条目数 = 孤儿用例 + 用例被过滤(排除孤儿) + 需求被过滤(排除孤儿) + 孤儿需求
-        orphan_case_set = set(orphan_cases)
-        filtered_case_non_orphan = [c for c in case_filtered_out.keys() if c not in orphan_case_set]
-        filtered_req_non_orphan = [c for c in req_filtered_out.keys() if c not in orphan_case_set]
-        anomaly_entries = len(orphan_cases) + len(filtered_case_non_orphan) + len(filtered_req_non_orphan) + len(orphan_reqs)
+        # 异常分析表条目数（所有异常原因独立显示，不互斥）
+        anomaly_entries = len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out) + len(orphan_reqs)
 
         total_output = traceability_entries + anomaly_entries
 
