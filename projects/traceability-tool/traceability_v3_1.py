@@ -692,9 +692,9 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         case_output = traceability_entries + len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out)
 
         # 需求数据校验
-        req_output_set = set(sorted_reqs)
-        req_output_set.update(orphan_reqs)
-        req_output_set.update(missing_case_reqs)
+        req_output_set = set(req_to_cases.keys())  # 双向溯源表中的需求
+        req_output_set.update(orphan_reqs)  # 孤儿需求
+        req_output_set.update(missing_case_reqs)  # 缺失用例的需求
         req_output = len(req_output_set)
 
         validation_errors = []
@@ -711,6 +711,9 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
             error_msg = "数据完整性校验失败！\n\n" + "\n".join(validation_errors) + "\n\n请检查数据或联系开发人员。"
             messagebox.showerror("数据校验警告", error_msg)
             # 继续执行导出，但在Excel中记录校验结果
+
+        # 计算异常分析表条目数
+        anomaly_entries = len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out) + len(orphan_reqs)
 
         self.export(output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
                    all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full,
