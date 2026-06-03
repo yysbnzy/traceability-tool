@@ -709,7 +709,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
 
         if validation_errors:
             error_msg = "数据完整性校验失败！\n\n" + "\n".join(validation_errors) + "\n\n请检查数据或联系开发人员。"
-            messagebox.showerror("数据校验警告", error_msg)
+            messagebox.showerror("数据校验失败", error_msg)
             # 继续执行导出，但在Excel中记录校验结果
 
         # 计算异常分析表条目数
