@@ -927,28 +927,28 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
             row_idx += 1
 
         # 2. 用例被过滤（由case_filter导致，用例ID不符合过滤前缀）
+        # 所有异常原因都独立显示，不互斥
         if case_filtered_out:
             for case_id, reqs in case_filtered_out.items():
-                if case_id not in orphan_cases:  # 避免重复
-                    display_reqs = case_filtered_original.get(case_id, reqs) if case_filtered_original else reqs
-                    ws3.cell(row=row_idx, column=1, value="用例被过滤")
-                    ws3.cell(row=row_idx, column=2, value=case_id)
-                    ws3.cell(row=row_idx, column=3, value=f"用例ID不符合过滤条件: {', '.join(display_reqs)}")
-                    for c in [1, 2, 3]:
-                        ws3.cell(row=row_idx, column=c).border = thin_border
-                    row_idx += 1
+                display_reqs = case_filtered_original.get(case_id, reqs) if case_filtered_original else reqs
+                ws3.cell(row=row_idx, column=1, value="用例被过滤")
+                ws3.cell(row=row_idx, column=2, value=case_id)
+                ws3.cell(row=row_idx, column=3, value=f"用例ID不符合过滤条件: {', '.join(display_reqs)}")
+                for c in [1, 2, 3]:
+                    ws3.cell(row=row_idx, column=c).border = thin_border
+                row_idx += 1
 
         # 3. 需求被过滤（由req_filter导致，所有需求不符合过滤前缀）
+        # 所有异常原因都独立显示，不互斥
         if req_filtered_out:
             for case_id, reqs in req_filtered_out.items():
-                if case_id not in orphan_cases:  # 避免重复
-                    display_reqs = req_filtered_original.get(case_id, reqs) if req_filtered_original else reqs
-                    ws3.cell(row=row_idx, column=1, value="需求被过滤")
-                    ws3.cell(row=row_idx, column=2, value=case_id)
-                    ws3.cell(row=row_idx, column=3, value=f"关联需求全部不符合过滤条件: {', '.join(display_reqs)}")
-                    for c in [1, 2, 3]:
-                        ws3.cell(row=row_idx, column=c).border = thin_border
-                    row_idx += 1
+                display_reqs = req_filtered_original.get(case_id, reqs) if req_filtered_original else reqs
+                ws3.cell(row=row_idx, column=1, value="需求被过滤")
+                ws3.cell(row=row_idx, column=2, value=case_id)
+                ws3.cell(row=row_idx, column=3, value=f"关联需求全部不符合过滤条件: {', '.join(display_reqs)}")
+                for c in [1, 2, 3]:
+                    ws3.cell(row=row_idx, column=c).border = thin_border
+                row_idx += 1
 
         # 孤儿需求
         for req_id in orphan_reqs:
