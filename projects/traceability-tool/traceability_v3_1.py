@@ -719,7 +719,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                    all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full,
                    case_filtered_out, case_filtered_original, req_filtered_out, req_filtered_original,
                    validation_errors, total_input_unique, traceability_entries, anomaly_entries,
-                   unique_case_ids, unique_orphan_req_ids, concat_case_map, concat_req_map)
+                   unique_case_ids, unique_orphan_req_ids, all_req_ids_in_case_doc, concat_case_map, concat_req_map)
         
         return output_path
 
@@ -727,7 +727,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None,
                case_filtered_out=None, case_filtered_original=None, req_filtered_out=None, req_filtered_original=None,
                validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0,
-               unique_case_ids=None, unique_orphan_req_ids=None, concat_case_map=None, concat_req_map=None):
+               unique_case_ids=None, unique_orphan_req_ids=None, all_req_ids_in_case_doc=None, concat_case_map=None, concat_req_map=None):
         wb = Workbook()
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -1053,7 +1053,8 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
 
         # 数据校验结果显示在统计汇总最后一行
         # 用例数据校验：输入去重用例 = 双向溯源表 + 孤儿用例 + 用例被过滤 + 需求被过滤
-        case_output_count = traceability_entries + anomaly_entries
+        # 用例校验：只计算用例相关项（双向溯源 + 孤儿用例 + 用例被过滤 + 需求被过滤）
+        case_output_count = traceability_entries + len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out)
         case_integrity_pass = (len(unique_case_ids) if unique_case_ids else 0) == case_output_count
 
         # 需求数据校验：用例文档去重需求 = 双向溯源需求 + 孤儿需求 + 缺失需求
