@@ -620,16 +620,19 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         req_to_cases_full = dict(req_to_cases)
 
         # 记录被过滤掉的用例（用于异常分析）
-        filtered_out_cases = {}
-        filtered_out_cases_original = {}  # key=拼接用例ID, value=set(原始需求ID，用于异常分析显示)
+        # 区分两类：用例被过滤（case_filter不匹配）和需求被过滤（req_filter导致所有需求被过滤）
+        case_filtered_out = {}        # key=原始用例ID, value=原始需求ID集合（用例被过滤）
+        case_filtered_original = {}   # 用于显示原始需求ID
+        req_filtered_out = {}         # key=原始用例ID, value=原始需求ID集合（需求被过滤）
+        req_filtered_original = {}    # 用于显示原始需求ID
 
         if case_filter:
             # 过滤用例：只保留符合前缀的用例（仅影响双向溯源表）
             for case_id, reqs in list(case_to_reqs.items()):
                 if not case_id.startswith(case_filter):
-                    # 用例ID不符合过滤条件，记录为被过滤
-                    filtered_out_cases[case_id] = reqs
-                    filtered_out_cases_original[case_id] = case_to_original_reqs.get(case_id, set())
+                    # 用例ID不符合过滤条件，记录为"用例被过滤"
+                    case_filtered_out[case_id] = reqs
+                    case_filtered_original[case_id] = case_to_original_reqs.get(case_id, set())
             case_to_reqs = {k: v for k, v in case_to_reqs.items() if k.startswith(case_filter)}
             case_to_reqs_raw = {k: v for k, v in case_to_reqs_raw.items() if k.startswith(case_filter)}
             # 同时更新req_to_cases中的关联
@@ -643,28 +646,28 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         if req_filter:
             # 过滤需求：只保留符合前缀的需求（仅影响双向溯源表）
             for case_id, reqs in list(case_to_reqs.items()):
-                filtered_reqs = {r for r in reqs if r.startswith(req_filter)}
-                if not filtered_reqs:
-                    # 所有需求都被过滤，记录被过滤的用例
-                    if case_id not in filtered_out_cases:
-                        filtered_out_cases[case_id] = reqs
-                        filtered_out_cases_original[case_id] = case_to_original_reqs.get(case_id, set())
+                filtered_reqs_set = {r for r in reqs if r.startswith(req_filter)}
+                if not filtered_reqs_set:
+                    # 所有需求都被过滤，记录为"需求被过滤"
+                    if case_id not in case_filtered_out:
+                        req_filtered_out[case_id] = reqs
+                        req_filtered_original[case_id] = case_to_original_reqs.get(case_id, set())
                 else:
-                    case_to_reqs[case_id] = filtered_reqs
+                    case_to_reqs[case_id] = filtered_reqs_set
 
             req_to_cases = {k: v for k, v in req_to_cases.items() if k.startswith(req_filter)}
             # 同时更新case_to_reqs中的关联
             for case_id, reqs in list(case_to_reqs.items()):
-                filtered_reqs = {r for r in reqs if r.startswith(req_filter)}
-                if filtered_reqs:
-                    case_to_reqs[case_id] = filtered_reqs
+                filtered_reqs_set = {r for r in reqs if r.startswith(req_filter)}
+                if filtered_reqs_set:
+                    case_to_reqs[case_id] = filtered_reqs_set
                 else:
                     del case_to_reqs[case_id]
             # 同步更新case_to_reqs_raw
             for case_id, reqs in list(case_to_reqs_raw.items()):
-                filtered_reqs = {r for r in reqs if r.startswith(req_filter)}
-                if filtered_reqs:
-                    case_to_reqs_raw[case_id] = filtered_reqs
+                filtered_reqs_set = {r for r in reqs if r.startswith(req_filter)}
+                if filtered_reqs_set:
+                    case_to_reqs_raw[case_id] = filtered_reqs_set
                 else:
                     del case_to_reqs_raw[case_id]
 
@@ -687,10 +690,11 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         # 新校验逻辑：双向溯源表去重用例数 + 异常分析表条目数 = 去重后的输入源总数
         traceability_entries = len([c for c, r in case_to_reqs.items() if r])  # 双向溯源表去重用例数
 
-        # 异常分析表条目数 = 孤儿用例 + 被过滤用例(排除孤儿) + 孤儿需求
+        # 异常分析表条目数 = 孤儿用例 + 用例被过滤(排除孤儿) + 需求被过滤(排除孤儿) + 孤儿需求
         orphan_case_set = set(orphan_cases)
-        filtered_non_orphan = [c for c in filtered_out_cases.keys() if c not in orphan_case_set]
-        anomaly_entries = len(orphan_cases) + len(filtered_non_orphan) + len(orphan_reqs)
+        filtered_case_non_orphan = [c for c in case_filtered_out.keys() if c not in orphan_case_set]
+        filtered_req_non_orphan = [c for c in req_filtered_out.keys() if c not in orphan_case_set]
+        anomaly_entries = len(orphan_cases) + len(filtered_case_non_orphan) + len(filtered_req_non_orphan) + len(orphan_reqs)
 
         total_output = traceability_entries + anomaly_entries
 
@@ -706,17 +710,17 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
             # 继续执行导出，但在Excel中记录校验结果
 
         self.export(output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
-                   all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full, filtered_out_cases,
-                   validation_errors, total_input_unique, traceability_entries, anomaly_entries, filtered_out_cases_original,
+                   all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full, req_to_cases_full,
                    case_filtered_out, case_filtered_original, req_filtered_out, req_filtered_original,
+                   validation_errors, total_input_unique, traceability_entries, anomaly_entries,
                    unique_case_ids, unique_orphan_req_ids, concat_case_map, concat_req_map)
         
         return output_path
 
     def export(self, output_path, case_to_reqs, case_to_reqs_raw, req_to_cases,
-               all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None, filtered_out_cases=None,
-               validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0, filtered_out_cases_original=None,
+               all_req_ids_raw, missing_case_reqs, case_to_reqs_raw_full=None, req_to_cases_full=None,
                case_filtered_out=None, case_filtered_original=None, req_filtered_out=None, req_filtered_original=None,
+               validation_errors=None, total_valid_rows=0, traceability_entries=0, anomaly_entries=0,
                unique_case_ids=None, unique_orphan_req_ids=None, concat_case_map=None, concat_req_map=None):
         wb = Workbook()
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
@@ -935,14 +939,13 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                     row_idx += 1
 
         # 3. 需求被过滤（由req_filter导致，所有需求不符合过滤前缀）
-        if filtered_out_cases:
-            for case_id, reqs in filtered_out_cases.items():
+        if req_filtered_out:
+            for case_id, reqs in req_filtered_out.items():
                 if case_id not in orphan_cases:  # 避免重复
-                    # 使用原始需求ID显示（不拼接前缀后缀）
-                    display_reqs = filtered_out_cases_original.get(case_id, reqs) if filtered_out_cases_original else reqs
+                    display_reqs = req_filtered_original.get(case_id, reqs) if req_filtered_original else reqs
                     ws3.cell(row=row_idx, column=1, value="需求被过滤")
                     ws3.cell(row=row_idx, column=2, value=case_id)
-                    ws3.cell(row=row_idx, column=3, value=f"关联需求不符合过滤条件: {', '.join(display_reqs)}")
+                    ws3.cell(row=row_idx, column=3, value=f"关联需求全部不符合过滤条件: {', '.join(display_reqs)}")
                     for c in [1, 2, 3]:
                         ws3.cell(row=row_idx, column=c).border = thin_border
                     row_idx += 1
@@ -997,7 +1000,8 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         total_cases = len(case_to_reqs_raw_full) if case_to_reqs_raw_full else len(case_to_reqs_raw)
         linked_cases = len([c for c, r in (case_to_reqs_raw_full.items() if case_to_reqs_raw_full else case_to_reqs_raw.items()) if r])
         orphan_case_count = len(orphan_cases)
-        filtered_case_count = len(filtered_out_cases) if filtered_out_cases else 0
+        filtered_case_count = len(case_filtered_out) if case_filtered_out else 0
+        filtered_req_count = len(req_filtered_out) if req_filtered_out else 0
         total_reqs = len(req_to_cases_full) if req_to_cases_full else len(req_to_cases)
         linked_reqs = len([r for r, c in (req_to_cases_full.items() if req_to_cases_full else req_to_cases.items()) if c])
         orphan_req_count = len(orphan_reqs)
@@ -1016,7 +1020,8 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
             ('总用例数', total_cases, '用例文档中用例ID非空的总数'),
             ('双向关联用例数', linked_cases, '有关联需求的用例数'),
             ('孤儿用例数', orphan_case_count, '未关联任何需求的用例数'),
-            ('需求被过滤用例数', filtered_case_count, '关联需求不符合过滤条件的用例数'),
+            ('用例被过滤数', filtered_case_count, '用例ID不符合过滤条件的用例数'),
+            ('需求被过滤用例数', filtered_req_count, '关联需求全部被过滤的用例数'),
             ('', '', ''),
             ('用例中引用需求数', total_reqs, '用例文档中引用的需求ID总数'),
             ('双向关联需求数', linked_reqs, '有关联用例的需求数'),
