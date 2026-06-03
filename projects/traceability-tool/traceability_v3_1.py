@@ -687,18 +687,24 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         total_input_unique = len(unique_case_ids) + len(unique_orphan_req_ids)
 
         # ===== 数据完整性校验 =====
-        # 简化校验：输入去重总数 = 输出去重总数（双向溯源表 + 异常分析表）
+        # 用例数据校验
         traceability_entries = len([c for c, r in case_to_reqs.items() if r])  # 双向溯源表去重用例数
+        case_output = traceability_entries + len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out)
 
-        # 异常分析表条目数（所有异常原因独立显示，不互斥）
-        anomaly_entries = len(orphan_cases) + len(case_filtered_out) + len(req_filtered_out) + len(orphan_reqs)
-
-        total_output = traceability_entries + anomaly_entries
+        # 需求数据校验
+        req_output_set = set(sorted_reqs)
+        req_output_set.update(orphan_reqs)
+        req_output_set.update(missing_case_reqs)
+        req_output = len(req_output_set)
 
         validation_errors = []
-        if total_output != total_input_unique:
+        if len(unique_case_ids) != case_output:
             validation_errors.append(
-                f"数据完整性校验失败：双向溯源表({traceability_entries}) + 异常分析表({anomaly_entries}) = {total_output} ≠ 输入源去重总数({total_input_unique})"
+                f"用例数据校验失败：输入去重用例({len(unique_case_ids)}) ≠ 输出({case_output})"
+            )
+        if len(all_req_ids_raw) != req_output:
+            validation_errors.append(
+                f"需求数据校验失败：输入去重需求({len(all_req_ids_raw)}) ≠ 输出({req_output})"
             )
 
         if validation_errors:
