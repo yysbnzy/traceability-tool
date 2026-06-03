@@ -1052,8 +1052,15 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         ws5.column_dimensions['C'].width = 50
 
         # 数据校验结果显示在统计汇总最后一行
-        # 新校验公式：双向溯源表去重用例数 + 异常分析表条目数 = 去重后的输入源总数
-        data_integrity_pass = (traceability_entries + anomaly_entries) == total_valid_rows
+        # 用例数据校验：输入去重用例 = 双向溯源表 + 孤儿用例 + 用例被过滤 + 需求被过滤
+        case_output_count = traceability_entries + anomaly_entries
+        case_integrity_pass = (len(unique_case_ids) if unique_case_ids else 0) == case_output_count
+
+        # 需求数据校验：用例文档去重需求 = 双向溯源需求 + 孤儿需求 + 缺失需求
+        req_output_count = len([r for r, c in req_to_cases.items() if c]) + (len(orphan_reqs) if orphan_reqs else 0) + len(missing_case_reqs)
+        req_integrity_pass = (len(all_req_ids_in_case_doc) if all_req_ids_in_case_doc else 0) == req_output_count
+
+        data_integrity_pass = case_integrity_pass and req_integrity_pass
 
         # 空行分隔
         row_idx += 1
@@ -1061,7 +1068,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
         # 数据校验结果行
         ws5.cell(row=row_idx, column=1, value='数据完整性校验')
         ws5.cell(row=row_idx, column=2, value='通过' if data_integrity_pass else '失败')
-        ws5.cell(row=row_idx, column=3, value=f'双向溯源表去重用例({traceability_entries}) + 异常分析表条目({anomaly_entries}) = {traceability_entries + anomaly_entries}，输入源去重总数={total_valid_rows}')
+        ws5.cell(row=row_idx, column=3, value=f'用例校验: {len(unique_case_ids) if unique_case_ids else 0}=={case_output_count} 需求校验: {len(all_req_ids_in_case_doc) if all_req_ids_in_case_doc else 0}=={req_output_count}')
 
         # 根据状态设置颜色
         status_cell = ws5.cell(row=row_idx, column=2)
@@ -1088,8 +1095,15 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                 for c in [1, 2, 3]:
                     ws5.cell(row=row_idx, column=c).border = thin_border
 
-        wb.save(output_path)
-        print(f"溯源分析完成，结果已保存至：{output_path}")
+        try:
+            wb.save(output_path)
+            print(f"溯源分析完成，结果已保存至：{output_path}")
+        except PermissionError:
+            messagebox.showerror("错误", f"无法保存文件，文件可能被占用：{output_path}")
+            raise
+        except Exception as e:
+            messagebox.showerror("错误", f"保存文件失败：{str(e)}")
+            raise
 
 
 def main():
