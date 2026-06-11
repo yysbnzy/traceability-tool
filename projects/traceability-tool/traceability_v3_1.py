@@ -14,7 +14,7 @@ from tkinter import ttk, filedialog, messagebox
 class TraceabilityTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("测试用例与需求溯源工具 v3.1")
+        self.root.title("测试用例与需求溯源工具 v3.1-fix9")
         self.root.geometry("900x650")
         self.root.minsize(850, 600)
 
@@ -44,7 +44,7 @@ class TraceabilityTool:
         title_frame = ttk.Frame(main_container)
         title_frame.pack(fill=tk.X, pady=(0, 15))
         ttk.Label(title_frame, text="📊 测试用例与需求溯源工具", style='Title.TLabel').pack(side=tk.LEFT)
-        ttk.Label(title_frame, text="v3.1", style='Hint.TLabel').pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(title_frame, text="v3.1-fix9", style='Hint.TLabel').pack(side=tk.LEFT, padx=(10, 0))
 
         # ===== 用例文档配置（顶部通栏）=====
         case_doc_frame = ttk.LabelFrame(main_container, text="📄 用例文档配置", style='Group.TLabelframe', padding="10")
@@ -525,6 +525,7 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
 
         # 去重统计输入源数据
         unique_case_ids = set()      # 所有出现过的不重复原始用例ID
+        all_req_ids_in_case_doc = set()  # 用例文档中所有不重复需求ID（含孤儿需求）
         unique_orphan_req_ids = set()  # 只有需求ID（无用例ID）的不重复原始需求ID
 
         case_ws = self.case_wb[self.case_sheet.get()] if self.case_sheet.get() and self.case_sheet.get() != "默认" else self.case_wb.active
@@ -584,6 +585,9 @@ A: 这是设计意图——双向溯源表显示拼接后的ID用于展示，其
                 # 只有需求ID（无用例ID）的行，统计为孤儿需求候选
                 if not case_id_raw:
                     unique_orphan_req_ids.add(req_id)
+                
+                # 统计用例文档中的所有不重复需求ID
+                all_req_ids_in_case_doc.add(req_id)
 
                 if req_id not in req_to_cases:
                     req_to_cases[req_id] = set()
